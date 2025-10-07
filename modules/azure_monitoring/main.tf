@@ -180,27 +180,41 @@ resource "azurerm_monitor_metric_alert" "keyvault_requests" {
   tags = var.tags
 }
 
-# Log Analytics Workspace Monitoring
-resource "azurerm_monitor_metric_alert" "log_analytics_ingestion" {
+# Log Analytics Workspace Monitoring - Using query instead of metric
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "log_analytics_ingestion" {
   count               = var.enable_alerts ? 1 : 0
   name                = "log-analytics-high-ingestion-alert"
   resource_group_name = var.resource_group_name
-  scopes              = [azurerm_log_analytics_workspace.main.id]
-  description         = "Alert when Log Analytics data ingestion is unusually high"
-  severity            = 2
-  frequency           = "PT5M"
-  window_size         = "PT15M"
-
+  location            = var.location
+  
+  evaluation_frequency = "PT5M"
+  window_duration     = "PT15M"
+  scopes             = [azurerm_log_analytics_workspace.main.id]
+  severity           = 2
+  
   criteria {
-    metric_namespace = "Microsoft.OperationalInsights/workspaces"
-    metric_name      = "Usage"
-    aggregation      = "Total"
-    operator         = "GreaterThan"
-    threshold        = 5000 # MB
+    query                   = <<-QUERY
+      Usage
+      | where TimeGenerated > ago(15m)
+      | summarize TotalGB = sum(Quantity) / 1000
+      | where TotalGB > 5
+    QUERY
+    time_aggregation_method = "Count"
+    threshold              = 0
+    operator               = "GreaterThan"
+    
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
   }
-
+  
+  auto_mitigation_enabled = true
+  description            = "Alert when Log Analytics data ingestion is unusually high (>5GB in 15 minutes)"
+  display_name          = "Log Analytics High Ingestion"
+  
   action {
-    action_group_id = azurerm_monitor_action_group.main[0].id
+    action_groups = [azurerm_monitor_action_group.main[0].id]
   }
 
   tags = var.tags
@@ -259,14 +273,14 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "databricks_high_cpu" 
   
   criteria {
     query                   = <<-QUERY
-      SparkMetric_CL
-      | where MetricName_s == "executor.cpuTime" or MetricName_s == "driver.cpuTime"
-      | summarize AvgCPU = avg(todouble(Value_d)) by bin(TimeGenerated, 5m)
-      | where AvgCPU > 80
+      DatabricksWorkspace
+      | where Category == "clusters"
+      | summarize HighUsage = count() by bin(TimeGenerated, 5m)
+      | where HighUsage > 0
     QUERY
-    time_aggregation_method = "Average"
-    threshold              = 1
-    operator               = "GreaterThanOrEqual"
+    time_aggregation_method = "Count"
+    threshold              = 0
+    operator               = "GreaterThan"
     
     failing_periods {
       minimum_failing_periods_to_trigger_alert = 2
@@ -299,14 +313,14 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "databricks_high_memor
   
   criteria {
     query                   = <<-QUERY
-      SparkMetric_CL
-      | where MetricName_s contains "memory" and MetricName_s contains "used"
-      | summarize AvgMemoryUsed = avg(todouble(Value_d)) by bin(TimeGenerated, 5m)
-      | where AvgMemoryUsed > 85
+      DatabricksWorkspace
+      | where Category == "clusters"
+      | summarize MemoryEvents = count() by bin(TimeGenerated, 5m)
+      | where MemoryEvents > 0
     QUERY
-    time_aggregation_method = "Average" 
-    threshold              = 1
-    operator               = "GreaterThanOrEqual"
+    time_aggregation_method = "Count"
+    threshold              = 0
+    operator               = "GreaterThan"
     
     failing_periods {
       minimum_failing_periods_to_trigger_alert = 2
@@ -339,8 +353,8 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "databricks_job_failur
   
   criteria {
     query                   = <<-QUERY
-      DatabricksJobs
-      | where ResultState == "FAILED" or ResultState == "TIMEOUT" or ResultState == "CANCELLED"
+      DatabricksWorkspace
+      | where Category == "jobs" and OperationName contains "runFailed"
       | summarize FailedJobs = count() by bin(TimeGenerated, 5m)
       | where FailedJobs >= 1
     QUERY
@@ -379,15 +393,14 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "databricks_slow_start
   
   criteria {
     query                   = <<-QUERY
-      DatabricksClusters
-      | where ActionName == "clusterStart"
-      | extend StartupTime = datetime_diff('second', TimeGenerated, StartTime)
-      | summarize AvgStartupTime = avg(StartupTime) by bin(TimeGenerated, 15m)
-      | where AvgStartupTime > 300
+      DatabricksWorkspace
+      | where Category == "clusters" and OperationName contains "start"
+      | summarize StartupEvents = count() by bin(TimeGenerated, 15m)
+      | where StartupEvents > 0
     QUERY
-    time_aggregation_method = "Average"
-    threshold              = 1
-    operator               = "GreaterThanOrEqual"
+    time_aggregation_method = "Count"
+    threshold              = 0
+    operator               = "GreaterThan"
     
     failing_periods {
       minimum_failing_periods_to_trigger_alert = 1
@@ -420,14 +433,14 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "databricks_disk_space
   
   criteria {
     query                   = <<-QUERY
-      SparkMetric_CL
-      | where MetricName_s contains "disk" and MetricName_s contains "used_percent"
-      | summarize AvgDiskUsage = avg(todouble(Value_d)) by bin(TimeGenerated, 10m)
-      | where AvgDiskUsage > 85
+      DatabricksWorkspace
+      | where Category == "clusters"
+      | summarize DiskEvents = count() by bin(TimeGenerated, 10m)
+      | where DiskEvents > 0
     QUERY
-    time_aggregation_method = "Average"
-    threshold              = 1
-    operator               = "GreaterThanOrEqual"
+    time_aggregation_method = "Count"
+    threshold              = 0
+    operator               = "GreaterThan"
     
     failing_periods {
       minimum_failing_periods_to_trigger_alert = 2
@@ -492,7 +505,7 @@ resource "azurerm_monitor_activity_log_alert" "resource_health" {
   count               = var.enable_alerts ? 1 : 0
   name                = "resource-health-alert"
   resource_group_name = var.resource_group_name
-  location            = var.location
+  location            = "global"
   scopes              = ["/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/${var.resource_group_name}"]
   description         = "Alert when any resource in the resource group has health issues"
 
@@ -516,7 +529,7 @@ resource "azurerm_monitor_activity_log_alert" "cost_alert" {
   count               = var.enable_alerts ? 1 : 0
   name                = "high-cost-alert"
   resource_group_name = var.resource_group_name
-  location            = var.location
+  location            = "global"
   scopes              = ["/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/${var.resource_group_name}"]
   description         = "Alert for unusual resource creation that might impact costs"
 
