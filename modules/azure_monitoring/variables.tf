@@ -57,6 +57,23 @@ variable "alert_email" {
   description = "Email address for alerts"
   type        = string
   default     = ""
+  
+  validation {
+    condition     = var.alert_email == "" || can(regex("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$", var.alert_email))
+    error_message = "Alert email must be a valid email address or empty string."
+  }
+}
+
+variable "alert_sms_number" {
+  description = "SMS phone number for alerts (optional backup)"
+  type        = string
+  default     = ""
+}
+
+variable "databricks_workspace_id" {
+  description = "The ID of the Databricks workspace for diagnostics"
+  type        = string
+  default     = null
 }
 
 variable "tags" {

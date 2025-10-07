@@ -64,9 +64,10 @@ module "monitoring" {
   app_insights_name   = "appi-${local.naming_prefix}"
   resource_group_name = module.resource_group.resource_group_name
   location            = var.location
-  storage_account_id  = module.datalake_storage.storage_account_id
-  keyvault_id         = module.azure_keyvault.keyvault_id
-  enable_alerts       = var.enable_monitoring_alerts
-  alert_email         = var.monitoring_email
-  tags                = local.common_tags
+  storage_account_id     = module.datalake_storage.storage_account_id
+  keyvault_id           = module.azure_keyvault.keyvault_id
+  databricks_workspace_id = module.databricks_workspace.workspace_id
+  enable_alerts         = var.enable_monitoring_alerts
+  alert_email           = var.monitoring_email
+  tags                  = local.common_tags
 }
