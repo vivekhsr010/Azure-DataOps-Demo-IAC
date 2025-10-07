@@ -22,7 +22,7 @@ secret_scope_name = "keyvault-secrets"
 
 # Monitoring Configuration
 enable_monitoring_alerts = true
-monitoring_email         = "example@example.com"
+monitoring_email         = "vivekh.harikumar@gmail.com"
 
 # Environment Configuration
 environment  = "dev"
