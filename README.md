@@ -114,8 +114,7 @@ This Terraform configuration creates a comprehensive, enterprise-grade analytics
 │   └── azure_monitoring/         # Monitoring and logging module
 └── scripts/
     ├── setup-backend.sh       # Automated backend creation with security
-    ├── check-backend-status.sh # Backend health monitoring
-    └── backup-state.sh        # State file backup utility
+    └── check-backend-status.sh # Backend health monitoring
 ```
 
 ## 🏗️ Backend Management
