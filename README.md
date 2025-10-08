@@ -249,7 +249,7 @@ single_node_cluster      = true            # UI checkbox equivalent
 
 # Comprehensive Monitoring Configuration
 enable_monitoring_alerts = true            # Enable all monitoring alerts
-monitoring_email        = "vivekh.harikumar@gmail.com"  # Alert destination
+monitoring_email        = "example@example.com"  # Alert destination
 ```
 
 ### 📊 **Monitoring Query Examples**
