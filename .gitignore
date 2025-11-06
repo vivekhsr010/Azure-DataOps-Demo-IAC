@@ -1,1 +1,41 @@
+# macOS
 .DS_Store
+
+# Terraform files
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfplan
+*.tfplan.*
+crash.log
+crash.*.log
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+Thumbs.db
+ehthumbs.db
+
+# Logs
+*.log
+
+# Backup files
+*.backup
+*.bak
+
+# Environment files
+.env
+.env.*
+
+# Personal configuration
+terraform.tfvars
+terraform.tfvars.json
+
+# Keep sample files but ignore actual config
+!sample.terraform.tfvars

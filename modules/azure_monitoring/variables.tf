@@ -1,83 +1,81 @@
-variable "log_analytics_name" {
-  description = "The name of the Log Analytics workspace"
+# =============================================================================
+# AZURE COST & RESOURCE MONITORING MODULE - VARIABLES
+# =============================================================================
+
+variable "project_name" {
+  description = "Project name used for resource naming"
   type        = string
 }
 
 variable "location" {
-  description = "The Azure region where resources will be created"
+  description = "Azure region for resources"
   type        = string
 }
 
 variable "resource_group_name" {
-  description = "The name of the resource group"
+  description = "Name of the resource group"
   type        = string
 }
 
-variable "log_analytics_sku" {
-  description = "The SKU of the Log Analytics workspace"
-  type        = string
-  default     = "PerGB2018"
+variable "tags" {
+  description = "Tags to apply to resources"
+  type        = map(string)
+  default     = {}
 }
 
-variable "log_retention_days" {
-  description = "Log retention in days"
-  type        = number
-  default     = 30
-  
+variable "team_email_addresses" {
+  description = "List of email addresses for team members (8 members max)"
+  type        = list(string)
+
   validation {
-    condition     = var.log_retention_days >= 30 && var.log_retention_days <= 730
-    error_message = "Log retention must be between 30 and 730 days."
+    condition     = length(var.team_email_addresses) <= 8 && length(var.team_email_addresses) > 0
+    error_message = "Team must have between 1 and 8 email addresses."
+  }
+
+  validation {
+    condition = alltrue([
+      for email in var.team_email_addresses : can(regex("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$", email))
+    ])
+    error_message = "All email addresses must be valid."
   }
 }
 
-variable "app_insights_name" {
-  description = "The name of the Application Insights component"
-  type        = string
+variable "monthly_budget_limit" {
+  description = "Monthly budget limit in USD"
+  type        = number
+  default     = 250
+
+  validation {
+    condition     = var.monthly_budget_limit > 0 && var.monthly_budget_limit <= 10000
+    error_message = "Monthly budget must be between $1 and $10,000."
+  }
 }
 
-variable "storage_account_id" {
-  description = "The ID of the storage account for diagnostics"
+variable "webhook_url" {
+  description = "Optional webhook URL for Slack/Teams integration"
   type        = string
-  default     = null
+  default     = ""
+
+  validation {
+    condition     = var.webhook_url == "" || can(regex("^https://", var.webhook_url))
+    error_message = "Webhook URL must be empty or start with https://."
+  }
 }
 
-variable "keyvault_id" {
-  description = "The ID of the Key Vault for diagnostics"
-  type        = string
-  default     = null
-}
-
-variable "enable_alerts" {
-  description = "Whether to enable monitoring alerts"
+variable "enable_cost_alerts" {
+  description = "Whether to enable cost monitoring alerts"
   type        = bool
   default     = true
 }
 
-variable "alert_email" {
-  description = "Email address for alerts"
-  type        = string
-  default     = ""
-  
-  validation {
-    condition     = var.alert_email == "" || can(regex("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$", var.alert_email))
-    error_message = "Alert email must be a valid email address or empty string."
-  }
+variable "enable_resource_alerts" {
+  description = "Whether to enable resource creation/deletion alerts"
+  type        = bool
+  default     = true
 }
 
-variable "alert_sms_number" {
-  description = "SMS phone number for alerts (optional backup)"
-  type        = string
-  default     = ""
-}
-
-variable "databricks_workspace_id" {
-  description = "The ID of the Databricks workspace for diagnostics"
-  type        = string
+variable "daily_cost_threshold" {
+  description = "Daily cost threshold in USD (default: 1/30 of monthly budget)"
+  type        = number
   default     = null
-}
-
-variable "tags" {
-  description = "A map of tags to assign to resources"
-  type        = map(string)
-  default     = {}
 }
