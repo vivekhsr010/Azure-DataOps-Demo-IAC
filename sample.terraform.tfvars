@@ -1,6 +1,8 @@
+# Azure Configuration
 resource_group_name  = "rg-terraform-datalake"
 location             = "eastus"
 storage_account_name = "stterraformdatalake2025"
+subscription_id      = "value"
 
 # Databricks Configuration
 workspace_name              = "dbw-terraform-analytics"
@@ -20,9 +22,20 @@ keyvault_sku_name = "standard"
 # Databricks Configuration
 secret_scope_name = "keyvault-secrets"
 
-# Monitoring Configuration
-enable_monitoring_alerts = true
-monitoring_email         = "example@example.com"
+# Cost & Resource Monitoring Configuration (8-Member Team)
+enable_cost_monitoring = true
+team_email_addresses = [
+  "team-lead@example.com",
+  "developer1@example.com", 
+  "developer2@example.com",
+  "developer3@example.com",
+  "data-engineer1@example.com",
+  "data-engineer2@example.com",
+  "analyst1@example.com",
+  "analyst2@example.com"
+]
+monthly_budget_limit = 250  # $250 monthly budget for 8-member team
+webhook_url         = ""    # Optional: Add Slack/Teams webhook for notifications
 
 # Environment Configuration
 environment  = "dev"

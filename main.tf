@@ -39,7 +39,7 @@ module "databricks_workspace" {
 # Phase 2: Deploy Databricks clusters (conditional)
 module "databricks_cluster" {
   count                   = var.deploy_databricks_cluster ? 1 : 0
-  depends_on              = [module.databricks_workspace]
+  depends_on              = [module.databricks_workspace, module.azure_keyvault]
   source                  = "./modules/azure_databricks_cluster"
   cluster_name            = var.cluster_name
   spark_version           = var.spark_version
@@ -50,6 +50,7 @@ module "databricks_cluster" {
   keyvault_id             = module.azure_keyvault.keyvault_id
   keyvault_uri            = module.azure_keyvault.keyvault_uri
   secret_scope_name       = var.secret_scope_name
+  create_secret_scope     = true
   custom_tags             = local.common_tags
 
   providers = {
@@ -57,17 +58,16 @@ module "databricks_cluster" {
   }
 }
 
-module "monitoring" {
+# Cost & Resource Monitoring
+module "cost_monitoring" {
+  count               = var.enable_cost_monitoring ? 1 : 0
   depends_on          = [module.resource_group]
   source              = "./modules/azure_monitoring"
-  log_analytics_name  = "log-${local.naming_prefix}"
-  app_insights_name   = "appi-${local.naming_prefix}"
-  resource_group_name = module.resource_group.resource_group_name
+  project_name        = var.project_name
   location            = var.location
-  storage_account_id     = module.datalake_storage.storage_account_id
-  keyvault_id           = module.azure_keyvault.keyvault_id
-  databricks_workspace_id = module.databricks_workspace.workspace_id
-  enable_alerts         = var.enable_monitoring_alerts
-  alert_email           = var.monitoring_email
-  tags                  = local.common_tags
+  resource_group_name = module.resource_group.resource_group_name
+  team_email_addresses = var.team_email_addresses
+  monthly_budget_limit = var.monthly_budget_limit
+  webhook_url         = var.webhook_url
+  tags                = local.common_tags
 }

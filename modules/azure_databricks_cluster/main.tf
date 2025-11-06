@@ -34,7 +34,7 @@ resource "databricks_cluster" "this_cluster" {
 
 # Optional: Secret scope for Key Vault integration
 resource "databricks_secret_scope" "keyvault" {
-  count = var.keyvault_id != null ? 1 : 0
+  count = var.create_secret_scope ? 1 : 0
   name  = var.secret_scope_name
 
   keyvault_metadata {

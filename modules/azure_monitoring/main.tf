@@ -1,203 +1,171 @@
 # =============================================================================
-# AZURE ANALYTICS MONITORING MODULE
+# AZURE COST & RESOURCE MONITORING MODULE
 # =============================================================================
-# This module provides comprehensive monitoring for:
-# - Storage Account: Availability, transactions, and capacity metrics
-# - Key Vault: API availability, request patterns, and audit logging  
-# - Databricks: CPU, memory, disk, job failures, and cluster performance
-# - Log Analytics: Data ingestion and usage patterns
-# - Infrastructure: Resource health and cost management
+# This module provides team-focused cost and resource monitoring for:
+# - Cost Management: Daily and monthly budget alerts with $250 monthly cap
+# - Resource Tracking: Creation, modification, and deletion alerts
+# - Team Management: 8-member team cost monitoring and governance
+# - Email Notifications: End-of-day and monthly cost summaries
+# - Subscription-wide: Resource lifecycle monitoring across all services
 # =============================================================================
 
-# Log Analytics Workspace
-resource "azurerm_log_analytics_workspace" "main" {
-  name                = var.log_analytics_name
+# Data source for current client configuration
+data "azurerm_client_config" "current" {}
+
+# Log Analytics Workspace for cost and resource monitoring
+resource "azurerm_log_analytics_workspace" "cost_monitoring" {
+  name                = "${var.project_name}-cost-monitoring-law"
   location            = var.location
   resource_group_name = var.resource_group_name
-  sku                 = var.log_analytics_sku
-  retention_in_days   = var.log_retention_days
+  sku                 = "PerGB2018"
+  retention_in_days   = 90  # 3 months retention for cost analysis
   
   # Enable data ingestion and querying
-  daily_quota_gb                     = -1  # Unlimited
-  reservation_capacity_in_gb_per_day = null
+  daily_quota_gb                     = 10  # Limit daily ingestion to control costs
   internet_ingestion_enabled         = true
   internet_query_enabled            = true
-  local_authentication_disabled     = false
 
   tags = var.tags
 }
 
-# Application Insights
-resource "azurerm_application_insights" "main" {
-  name                = var.app_insights_name
+# Application Insights for application cost monitoring
+resource "azurerm_application_insights" "cost_monitoring" {
+  name                = "${var.project_name}-cost-ai"
   location            = var.location
   resource_group_name = var.resource_group_name
-  workspace_id        = azurerm_log_analytics_workspace.main.id
+  workspace_id        = azurerm_log_analytics_workspace.cost_monitoring.id
   application_type    = "other"
+  sampling_percentage = 100
 
   tags = var.tags
 }
 
-# Diagnostic Settings for Storage Account
-resource "azurerm_monitor_diagnostic_setting" "storage" {
-  count                     = var.storage_account_id != null ? 1 : 0
-  name                      = "storage-diagnostics"
-  target_resource_id        = var.storage_account_id
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
+# =============================================================================
+# BUDGET CONFIGURATION
+# =============================================================================
 
-  # Storage accounts only support metrics, not logs in newer API versions
-  metric {
-    category = "Transaction"
-    enabled  = true
+# Monthly Budget Alert - $250 cap for 8-member team
+resource "azurerm_consumption_budget_subscription" "monthly_budget" {
+  name            = "${var.project_name}-monthly-budget"
+  subscription_id = "/subscriptions/${data.azurerm_client_config.current.subscription_id}"
+  
+  amount     = var.monthly_budget_limit
+  time_grain = "Monthly"
+  
+  time_period {
+    start_date = formatdate("YYYY-MM-01'T'00:00:00'Z'", timestamp())
+    end_date   = formatdate("YYYY-MM-01'T'00:00:00'Z'", timeadd(timestamp(), "8760h")) # 1 year from now
   }
-
-  metric {
-    category = "Capacity"
-    enabled  = true
+  
+  # Alert at 50%, 75%, 90%, and 100% of budget
+  notification {
+    enabled   = true
+    threshold = 50
+    operator  = "GreaterThan"
+    
+    contact_emails = var.team_email_addresses
+    
+    threshold_type = "Actual"
+  }
+  
+  notification {
+    enabled   = true
+    threshold = 75
+    operator  = "GreaterThan"
+    
+    contact_emails = var.team_email_addresses
+    
+    threshold_type = "Actual"
+  }
+  
+  notification {
+    enabled   = true
+    threshold = 90
+    operator  = "GreaterThan"
+    
+    contact_emails = var.team_email_addresses
+    
+    threshold_type = "Actual"
+  }
+  
+  notification {
+    enabled   = true
+    threshold = 100
+    operator  = "GreaterThan"
+    
+    contact_emails = var.team_email_addresses
+    
+    threshold_type = "Actual"
+  }
+  
+  # Forecast alerts at 80% and 100%
+  notification {
+    enabled   = true
+    threshold = 80
+    operator  = "GreaterThan"
+    
+    contact_emails = var.team_email_addresses
+    
+    threshold_type = "Forecasted"
   }
 }
 
-# Diagnostic Settings for Key Vault
-resource "azurerm_monitor_diagnostic_setting" "keyvault" {
-  count                     = var.keyvault_id != null ? 1 : 0
-  name                      = "keyvault-diagnostics"
-  target_resource_id        = var.keyvault_id
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
+# =============================================================================
+# ACTION GROUP FOR NOTIFICATIONS
+# =============================================================================
 
-  enabled_log {
-    category = "AuditEvent"
-  }
-
-  enabled_log {
-    category = "AzurePolicyEvaluationDetails"
-  }
-
-  metric {
-    category = "AllMetrics"
-    enabled  = true
-  }
-}
-
-# Storage Account Monitoring Alerts
-resource "azurerm_monitor_metric_alert" "storage_availability" {
-  count               = var.enable_alerts && var.storage_account_id != null ? 1 : 0
-  name                = "storage-availability-alert"
+# Main Action Group for all monitoring alerts
+resource "azurerm_monitor_action_group" "team_alerts" {
+  name                = "${var.project_name}-team-alerts"
   resource_group_name = var.resource_group_name
-  scopes              = [var.storage_account_id]
-  description         = "Alert when storage account availability drops below threshold"
-  severity            = 1
-  frequency           = "PT1M"
-  window_size         = "PT5M"
+  short_name          = "team-alert"
 
-  criteria {
-    metric_namespace = "Microsoft.Storage/storageAccounts"
-    metric_name      = "Availability"
-    aggregation      = "Average"
-    operator         = "LessThan"
-    threshold        = 99
+  # Email notifications for all team members
+  dynamic "email_receiver" {
+    for_each = var.team_email_addresses
+    content {
+      name                    = "team-member-${email_receiver.key + 1}"
+      email_address          = email_receiver.value
+      use_common_alert_schema = true
+    }
   }
 
-  action {
-    action_group_id = azurerm_monitor_action_group.main[0].id
-  }
-
-  tags = var.tags
-}
-
-resource "azurerm_monitor_metric_alert" "storage_transactions" {
-  count               = var.enable_alerts && var.storage_account_id != null ? 1 : 0
-  name                = "storage-high-transactions-alert"
-  resource_group_name = var.resource_group_name
-  scopes              = [var.storage_account_id]
-  description         = "Alert when storage transactions are unusually high"
-  severity            = 2
-  frequency           = "PT5M"
-  window_size         = "PT15M"
-
-  criteria {
-    metric_namespace = "Microsoft.Storage/storageAccounts"
-    metric_name      = "Transactions"
-    aggregation      = "Total"
-    operator         = "GreaterThan"
-    threshold        = 10000
-  }
-
-  action {
-    action_group_id = azurerm_monitor_action_group.main[0].id
+  # Optional: Add webhook for Slack/Teams integration
+  dynamic "webhook_receiver" {
+    for_each = var.webhook_url != "" ? [var.webhook_url] : []
+    content {
+      name        = "team-webhook"
+      service_uri = webhook_receiver.value
+    }
   }
 
   tags = var.tags
 }
 
-# Key Vault Monitoring Alerts
-resource "azurerm_monitor_metric_alert" "keyvault_availability" {
-  count               = var.enable_alerts && var.keyvault_id != null ? 1 : 0
-  name                = "keyvault-availability-alert"
-  resource_group_name = var.resource_group_name
-  scopes              = [var.keyvault_id]
-  description         = "Alert when Key Vault availability drops below threshold"
-  severity            = 1
-  frequency           = "PT1M"
-  window_size         = "PT5M"
+# =============================================================================
+# DAILY COST MONITORING ALERTS
+# =============================================================================
 
-  criteria {
-    metric_namespace = "Microsoft.KeyVault/vaults"
-    metric_name      = "ServiceApiHit"
-    aggregation      = "Count"
-    operator         = "LessThan"
-    threshold        = 1
-  }
-
-  action {
-    action_group_id = azurerm_monitor_action_group.main[0].id
-  }
-
-  tags = var.tags
-}
-
-resource "azurerm_monitor_metric_alert" "keyvault_requests" {
-  count               = var.enable_alerts && var.keyvault_id != null ? 1 : 0
-  name                = "keyvault-high-requests-alert"
-  resource_group_name = var.resource_group_name
-  scopes              = [var.keyvault_id]
-  description         = "Alert when Key Vault requests are unusually high"
-  severity            = 2
-  frequency           = "PT5M"
-  window_size         = "PT15M"
-
-  criteria {
-    metric_namespace = "Microsoft.KeyVault/vaults"
-    metric_name      = "ServiceApiHit"
-    aggregation      = "Count"
-    operator         = "GreaterThan"
-    threshold        = 1000
-  }
-
-  action {
-    action_group_id = azurerm_monitor_action_group.main[0].id
-  }
-
-  tags = var.tags
-}
-
-# Log Analytics Workspace Monitoring - Using query instead of metric
-resource "azurerm_monitor_scheduled_query_rules_alert_v2" "log_analytics_ingestion" {
-  count               = var.enable_alerts ? 1 : 0
-  name                = "log-analytics-high-ingestion-alert"
+# Daily cost alert - triggers at end of day if daily spend > $8.33 (1/30 of monthly budget)
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "daily_cost_alert" {
+  name                = "${var.project_name}-daily-cost-alert"
   resource_group_name = var.resource_group_name
   location            = var.location
   
-  evaluation_frequency = "PT5M"
-  window_duration     = "PT15M"
-  scopes             = [azurerm_log_analytics_workspace.main.id]
+  evaluation_frequency = "P1D"     # Daily evaluation
+  window_duration     = "P1D"     # Look at past 24 hours
+  scopes             = ["/subscriptions/${data.azurerm_client_config.current.subscription_id}"]
   severity           = 2
   
   criteria {
     query                   = <<-QUERY
       Usage
-      | where TimeGenerated > ago(15m)
-      | summarize TotalGB = sum(Quantity) / 1000
-      | where TotalGB > 5
+      | where TimeGenerated >= ago(1d)
+      | where IsBillable == true
+      | extend ResourceGroup = tostring(split(ResourceUri, "/")[4])
+      | where ResourceGroup == "${var.resource_group_name}"
+      | summarize DailyCost = sum(Quantity * UnitPrice) by bin(TimeGenerated, 1d)
+      | where DailyCost > ${var.monthly_budget_limit / 30}
     QUERY
     time_aggregation_method = "Count"
     threshold              = 0
@@ -210,274 +178,164 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "log_analytics_ingesti
   }
   
   auto_mitigation_enabled = true
-  description            = "Alert when Log Analytics data ingestion is unusually high (>5GB in 15 minutes)"
-  display_name          = "Log Analytics High Ingestion"
+  description            = "Daily cost exceeded $${var.monthly_budget_limit / 30} threshold (1/30 of monthly $${var.monthly_budget_limit} budget)"
+  display_name          = "Daily Cost Alert - End of Day Summary"
   
   action {
-    action_groups = [azurerm_monitor_action_group.main[0].id]
-  }
-
-  tags = var.tags
-}
-
-# Databricks Workspace Monitoring
-resource "azurerm_monitor_diagnostic_setting" "databricks" {
-  count                     = var.databricks_workspace_id != null ? 1 : 0
-  name                      = "databricks-diagnostics"
-  target_resource_id        = var.databricks_workspace_id
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
-
-  enabled_log {
-    category = "dbfs"
-  }
-
-  enabled_log {
-    category = "clusters"
-  }
-
-  enabled_log {
-    category = "accounts"
-  }
-
-  enabled_log {
-    category = "jobs"
-  }
-
-  enabled_log {
-    category = "notebook"
-  }
-
-  enabled_log {
-    category = "ssh"
-  }
-
-  enabled_log {
-    category = "workspace"
-  }
-}
-
-# Databricks Performance Monitoring Alerts
-# These monitor the underlying compute resources through Log Analytics queries
-
-# CPU Utilization Alert for Databricks Clusters
-resource "azurerm_monitor_scheduled_query_rules_alert_v2" "databricks_high_cpu" {
-  count               = var.enable_alerts && var.databricks_workspace_id != null ? 1 : 0
-  name                = "databricks-high-cpu-alert"
-  resource_group_name = var.resource_group_name
-  location            = var.location
-  
-  evaluation_frequency = "PT5M"
-  window_duration     = "PT15M"
-  scopes             = [azurerm_log_analytics_workspace.main.id]
-  severity           = 2
-  
-  criteria {
-    query                   = <<-QUERY
-      DatabricksWorkspace
-      | where Category == "clusters"
-      | summarize HighUsage = count() by bin(TimeGenerated, 5m)
-      | where HighUsage > 0
-    QUERY
-    time_aggregation_method = "Count"
-    threshold              = 0
-    operator               = "GreaterThan"
+    action_groups = [azurerm_monitor_action_group.team_alerts.id]
     
-    failing_periods {
-      minimum_failing_periods_to_trigger_alert = 2
-      number_of_evaluation_periods             = 3
+    custom_properties = {
+      "alert_type" = "daily_cost"
+      "team_size"  = tostring(length(var.team_email_addresses))
+      "budget_limit" = tostring(var.monthly_budget_limit)
     }
   }
-  
-  auto_mitigation_enabled = true
-  description            = "Alert when Databricks cluster CPU utilization is consistently high"
-  display_name          = "Databricks High CPU Usage"
-  
-  action {
-    action_groups = [azurerm_monitor_action_group.main[0].id]
-  }
 
   tags = var.tags
 }
 
-# Memory Utilization Alert for Databricks Clusters  
-resource "azurerm_monitor_scheduled_query_rules_alert_v2" "databricks_high_memory" {
-  count               = var.enable_alerts && var.databricks_workspace_id != null ? 1 : 0
-  name                = "databricks-high-memory-alert"
+# =============================================================================
+# RESOURCE LIFECYCLE MONITORING
+# =============================================================================
+
+# Resource Creation Alert
+resource "azurerm_monitor_activity_log_alert" "resource_creation" {
+  name                = "${var.project_name}-resource-creation-alert"
   resource_group_name = var.resource_group_name
-  location            = var.location
-  
-  evaluation_frequency = "PT5M"
-  window_duration     = "PT15M"
-  scopes             = [azurerm_log_analytics_workspace.main.id]
-  severity           = 2
-  
+  location            = "global"
+  scopes              = ["/subscriptions/${data.azurerm_client_config.current.subscription_id}"]
+  description         = "Alert when new resources are created in the subscription"
+
   criteria {
-    query                   = <<-QUERY
-      DatabricksWorkspace
-      | where Category == "clusters"
-      | summarize MemoryEvents = count() by bin(TimeGenerated, 5m)
-      | where MemoryEvents > 0
-    QUERY
-    time_aggregation_method = "Count"
-    threshold              = 0
-    operator               = "GreaterThan"
+    category = "Administrative"
+    operation_name = "Microsoft.Resources/subscriptions/resourceGroups/providers/resources/write"
+    level = "Informational"
+  }
+
+  action {
+    action_group_id = azurerm_monitor_action_group.team_alerts.id
     
-    failing_periods {
-      minimum_failing_periods_to_trigger_alert = 2
-      number_of_evaluation_periods             = 3
+    webhook_properties = {
+      "alert_type" = "resource_creation"
+      "team_notification" = "true"
     }
   }
-  
-  auto_mitigation_enabled = true
-  description            = "Alert when Databricks cluster memory utilization is consistently high"
-  display_name          = "Databricks High Memory Usage"
-  
-  action {
-    action_groups = [azurerm_monitor_action_group.main[0].id]
-  }
 
   tags = var.tags
 }
 
-# Databricks Job Failure Alert
-resource "azurerm_monitor_scheduled_query_rules_alert_v2" "databricks_job_failures" {
-  count               = var.enable_alerts && var.databricks_workspace_id != null ? 1 : 0
-  name                = "databricks-job-failures-alert"
+# Resource Deletion Alert
+resource "azurerm_monitor_activity_log_alert" "resource_deletion" {
+  name                = "${var.project_name}-resource-deletion-alert"
   resource_group_name = var.resource_group_name
-  location            = var.location
-  
-  evaluation_frequency = "PT5M"
-  window_duration     = "PT30M"
-  scopes             = [azurerm_log_analytics_workspace.main.id]
-  severity           = 1
-  
+  location            = "global"
+  scopes              = ["/subscriptions/${data.azurerm_client_config.current.subscription_id}"]
+  description         = "Alert when resources are deleted from the subscription"
+
   criteria {
-    query                   = <<-QUERY
-      DatabricksWorkspace
-      | where Category == "jobs" and OperationName contains "runFailed"
-      | summarize FailedJobs = count() by bin(TimeGenerated, 5m)
-      | where FailedJobs >= 1
-    QUERY
-    time_aggregation_method = "Count"
-    threshold              = 0
-    operator               = "GreaterThan"
+    category = "Administrative"
+    operation_name = "Microsoft.Resources/subscriptions/resourceGroups/providers/resources/delete"
+    level = "Informational"
+  }
+
+  action {
+    action_group_id = azurerm_monitor_action_group.team_alerts.id
     
-    failing_periods {
-      minimum_failing_periods_to_trigger_alert = 1
-      number_of_evaluation_periods             = 1  
+    webhook_properties = {
+      "alert_type" = "resource_deletion"
+      "team_notification" = "true"
+      "severity" = "high"
     }
   }
-  
-  auto_mitigation_enabled = false
-  description            = "Alert when Databricks jobs fail"
-  display_name          = "Databricks Job Failures"
-  
-  action {
-    action_groups = [azurerm_monitor_action_group.main[0].id]
-  }
 
   tags = var.tags
 }
 
-# Databricks Cluster Startup Time Alert
-resource "azurerm_monitor_scheduled_query_rules_alert_v2" "databricks_slow_startup" {
-  count               = var.enable_alerts && var.databricks_workspace_id != null ? 1 : 0
-  name                = "databricks-slow-startup-alert"
+# High-Cost VM Creation Alert
+resource "azurerm_monitor_activity_log_alert" "vm_creation" {
+  name                = "${var.project_name}-vm-creation-alert"
   resource_group_name = var.resource_group_name
-  location            = var.location
-  
-  evaluation_frequency = "PT15M"
-  window_duration     = "PT1H"
-  scopes             = [azurerm_log_analytics_workspace.main.id]
-  severity           = 2
-  
+  location            = "global"
+  scopes              = ["/subscriptions/${data.azurerm_client_config.current.subscription_id}"]
+  description         = "Alert when Virtual Machines are created (potentially expensive)"
+
   criteria {
-    query                   = <<-QUERY
-      DatabricksWorkspace
-      | where Category == "clusters" and OperationName contains "start"
-      | summarize StartupEvents = count() by bin(TimeGenerated, 15m)
-      | where StartupEvents > 0
-    QUERY
-    time_aggregation_method = "Count"
-    threshold              = 0
-    operator               = "GreaterThan"
+    category = "Administrative"
+    operation_name = "Microsoft.Compute/virtualMachines/write"
+    level = "Informational"
+  }
+
+  action {
+    action_group_id = azurerm_monitor_action_group.team_alerts.id
     
-    failing_periods {
-      minimum_failing_periods_to_trigger_alert = 1
-      number_of_evaluation_periods             = 2
+    webhook_properties = {
+      "alert_type" = "high_cost_resource"
+      "resource_type" = "virtual_machine"
+      "cost_impact" = "high"
     }
   }
-  
-  auto_mitigation_enabled = true
-  description            = "Alert when Databricks cluster startup time is consistently slow (>5 minutes)"
-  display_name          = "Databricks Slow Cluster Startup"
-  
-  action {
-    action_groups = [azurerm_monitor_action_group.main[0].id]
-  }
 
   tags = var.tags
 }
 
-# Databricks Disk Space Alert
-resource "azurerm_monitor_scheduled_query_rules_alert_v2" "databricks_disk_space" {
-  count               = var.enable_alerts && var.databricks_workspace_id != null ? 1 : 0
-  name                = "databricks-disk-space-alert"
+# High-Cost Databricks Creation Alert
+resource "azurerm_monitor_activity_log_alert" "databricks_creation" {
+  name                = "${var.project_name}-databricks-creation-alert"
   resource_group_name = var.resource_group_name
-  location            = var.location
-  
-  evaluation_frequency = "PT10M"
-  window_duration     = "PT30M"
-  scopes             = [azurerm_log_analytics_workspace.main.id]
-  severity           = 2
-  
+  location            = "global"
+  scopes              = ["/subscriptions/${data.azurerm_client_config.current.subscription_id}"]
+  description         = "Alert when Databricks workspaces are created (potentially expensive)"
+
   criteria {
-    query                   = <<-QUERY
-      DatabricksWorkspace
-      | where Category == "clusters"
-      | summarize DiskEvents = count() by bin(TimeGenerated, 10m)
-      | where DiskEvents > 0
-    QUERY
-    time_aggregation_method = "Count"
-    threshold              = 0
-    operator               = "GreaterThan"
+    category = "Administrative"
+    operation_name = "Microsoft.Databricks/workspaces/write"
+    level = "Informational"
+  }
+
+  action {
+    action_group_id = azurerm_monitor_action_group.team_alerts.id
     
-    failing_periods {
-      minimum_failing_periods_to_trigger_alert = 2
-      number_of_evaluation_periods             = 3
+    webhook_properties = {
+      "alert_type" = "high_cost_resource"
+      "resource_type" = "databricks"
+      "cost_impact" = "high"
     }
   }
-  
-  auto_mitigation_enabled = true
-  description            = "Alert when Databricks cluster disk usage exceeds 85%"
-  display_name          = "Databricks High Disk Usage"
-  
-  action {
-    action_groups = [azurerm_monitor_action_group.main[0].id]
-  }
 
   tags = var.tags
 }
 
-# Log Analytics Connectivity Test Query
-resource "azurerm_monitor_scheduled_query_rules_alert_v2" "log_analytics_connectivity" {
-  count               = var.enable_alerts ? 1 : 0
-  name                = "log-analytics-connectivity-test"
+# =============================================================================
+# MONTHLY COST SUMMARY ALERT
+# =============================================================================
+
+# Monthly cost summary - triggered on 1st of each month
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "monthly_cost_summary" {
+  name                = "${var.project_name}-monthly-cost-summary"
   resource_group_name = var.resource_group_name
   location            = var.location
   
-  evaluation_frequency = "PT5M"
-  window_duration     = "PT10M"
-  scopes             = [azurerm_log_analytics_workspace.main.id]
+  evaluation_frequency = "P1D"     # Daily check
+  window_duration     = "P2D"     # Look at past 2 days (maximum allowed)
+  scopes             = ["/subscriptions/${data.azurerm_client_config.current.subscription_id}"]
   severity           = 3  # Informational
   
   criteria {
     query                   = <<-QUERY
-      Heartbeat
-      | where TimeGenerated > ago(10m)
-      | summarize LastHeartbeat = max(TimeGenerated)
-      | extend MinutesAgo = datetime_diff('minute', now(), LastHeartbeat)
-      | where MinutesAgo > 15
+      Usage
+      | where TimeGenerated >= ago(2d)
+      | where IsBillable == true
+      | extend ResourceGroup = tostring(split(ResourceUri, "/")[4])
+      | where ResourceGroup == "${var.resource_group_name}"
+      | summarize 
+          RecentCost = sum(Quantity * UnitPrice),
+          ResourceCount = dcount(ResourceUri),
+          TopResources = make_list(pack("resource", Resource, "cost", Quantity * UnitPrice), 5)
+      | extend 
+          DailyAverage = RecentCost / 2,
+          ProjectedMonthlyCost = DailyAverage * 30,
+          BudgetUsagePercent = round((ProjectedMonthlyCost / ${var.monthly_budget_limit}.0) * 100, 2)
+      | where dayofmonth(now()) == 1  # Only trigger on 1st of month
     QUERY
     time_aggregation_method = "Count"
     threshold              = 0
@@ -490,24 +348,33 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "log_analytics_connect
   }
   
   auto_mitigation_enabled = true
-  description            = "Test query to verify Log Analytics is receiving data"
-  display_name          = "Log Analytics Connectivity Test"
+  description            = "Monthly cost summary report for ${length(var.team_email_addresses)}-member team ($${var.monthly_budget_limit} budget)"
+  display_name          = "Monthly Cost Summary Report"
   
   action {
-    action_groups = [azurerm_monitor_action_group.main[0].id]
+    action_groups = [azurerm_monitor_action_group.team_alerts.id]
+    
+    custom_properties = {
+      "alert_type" = "monthly_summary"
+      "report_type" = "cost_analysis"
+      "team_size" = tostring(length(var.team_email_addresses))
+    }
   }
 
   tags = var.tags
 }
 
-# Resource Health Monitoring
+# =============================================================================
+# RESOURCE HEALTH AND GOVERNANCE
+# =============================================================================
+
+# Resource Health Alert for critical resources
 resource "azurerm_monitor_activity_log_alert" "resource_health" {
-  count               = var.enable_alerts ? 1 : 0
-  name                = "resource-health-alert"
+  name                = "${var.project_name}-resource-health-alert"
   resource_group_name = var.resource_group_name
   location            = "global"
-  scopes              = ["/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/${var.resource_group_name}"]
-  description         = "Alert when any resource in the resource group has health issues"
+  scopes              = ["/subscriptions/${data.azurerm_client_config.current.subscription_id}"]
+  description         = "Alert when resources become unhealthy or unavailable"
 
   criteria {
     category = "ResourceHealth"
@@ -518,54 +385,105 @@ resource "azurerm_monitor_activity_log_alert" "resource_health" {
   }
 
   action {
-    action_group_id = azurerm_monitor_action_group.main[0].id
+    action_group_id = azurerm_monitor_action_group.team_alerts.id
+    
+    webhook_properties = {
+      "alert_type" = "resource_health"
+      "impact" = "service_availability"
+    }
   }
 
   tags = var.tags
 }
 
-# Budget Alert for Cost Management
-resource "azurerm_monitor_activity_log_alert" "cost_alert" {
-  count               = var.enable_alerts ? 1 : 0
-  name                = "high-cost-alert"
+# Unusual Activity Alert - Multiple resource operations
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "unusual_activity" {
+  name                = "${var.project_name}-unusual-activity-alert"
   resource_group_name = var.resource_group_name
-  location            = "global"
-  scopes              = ["/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/${var.resource_group_name}"]
-  description         = "Alert for unusual resource creation that might impact costs"
-
+  location            = var.location
+  
+  evaluation_frequency = "PT1H"    # Hourly check
+  window_duration     = "PT1H"    # Look at past hour
+  scopes             = [azurerm_log_analytics_workspace.cost_monitoring.id]
+  severity           = 2
+  
   criteria {
-    category = "Administrative"
-    operation_name = "Microsoft.Resources/deployments/write"
+    query                   = <<-QUERY
+      AzureActivity
+      | where TimeGenerated >= ago(1h)
+      | where ActivityStatusValue == "Success"
+      | where OperationNameValue contains "write" or OperationNameValue contains "delete"
+      | summarize 
+          OperationCount = count(),
+          UniqueCallers = dcount(Caller),
+          Operations = make_set(OperationNameValue)
+      | where OperationCount > 10 or UniqueCallers > 3
+    QUERY
+    time_aggregation_method = "Count"
+    threshold              = 0
+    operator               = "GreaterThan"
+    
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
   }
-
+  
+  auto_mitigation_enabled = false  # Manual review needed
+  description            = "Unusual number of resource operations detected - possible unauthorized activity"
+  display_name          = "Unusual Resource Activity Alert"
+  
   action {
-    action_group_id = azurerm_monitor_action_group.main[0].id
+    action_groups = [azurerm_monitor_action_group.team_alerts.id]
+    
+    custom_properties = {
+      "alert_type" = "security"
+      "requires_review" = "true"
+    }
   }
 
   tags = var.tags
 }
 
-# Data source for current client configuration
-data "azurerm_client_config" "current" {}
+# =============================================================================
+# DIAGNOSTIC SETTINGS FOR COST MONITORING
+# =============================================================================
 
-# Local values for monitoring configuration
-locals {
-  # Ensure all monitoring components are properly connected
-  monitoring_enabled = var.enable_alerts && var.alert_email != ""
-}
+# Activity Log diagnostic settings to capture all subscription activities
+resource "azurerm_monitor_diagnostic_setting" "activity_log" {
+  name                       = "${var.project_name}-activity-log-diagnostics"
+  target_resource_id         = "/subscriptions/${data.azurerm_client_config.current.subscription_id}"
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.cost_monitoring.id
 
-# Action Group for Alerts
-resource "azurerm_monitor_action_group" "main" {
-  count               = var.enable_alerts ? 1 : 0
-  name                = "monitoring-action-group"
-  resource_group_name = var.resource_group_name
-  short_name          = "mon-alerts"
-
-  email_receiver {
-    name                    = "admin"
-    email_address          = var.alert_email
-    use_common_alert_schema = true
+  enabled_log {
+    category = "Administrative"
   }
 
-  tags = var.tags
+  enabled_log {
+    category = "Security"
+  }
+
+  enabled_log {
+    category = "ServiceHealth"
+  }
+
+  enabled_log {
+    category = "Alert"
+  }
+
+  enabled_log {
+    category = "Recommendation"
+  }
+
+  enabled_log {
+    category = "Policy"
+  }
+
+  enabled_log {
+    category = "Autoscale"
+  }
+
+  enabled_log {
+    category = "ResourceHealth"
+  }
 }

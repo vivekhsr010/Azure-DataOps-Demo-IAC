@@ -28,19 +28,25 @@ variable "num_workers" {
 variable "keyvault_id" {
   description = "The ID of the Key Vault for secret scope"
   type        = string
-  default     = null
+  default     = ""
 }
 
 variable "keyvault_uri" {
   description = "The URI of the Key Vault for secret scope"
   type        = string
-  default     = null
+  default     = ""
 }
 
 variable "secret_scope_name" {
   description = "The name of the Databricks secret scope"
   type        = string
   default     = "keyvault-scope"
+}
+
+variable "create_secret_scope" {
+  description = "Whether to create the Databricks secret scope for Key Vault"
+  type        = bool
+  default     = true
 }
 
 variable "single_node" {
