@@ -35,7 +35,11 @@ team_email_addresses = [
   "analyst2@example.com"
 ]
 monthly_budget_limit = 250  # $250 monthly budget for 8-member team
-webhook_url         = ""    # Optional: Add Slack/Teams webhook for notifications
+
+# Microsoft Teams Integration
+teams_webhook_url      = ""                    # Microsoft Teams incoming webhook URL
+teams_channel_name     = "Azure Alerts"       # Teams channel name for notifications
+use_logic_app_for_teams = true               # Use Logic App for rich Teams notifications (recommended)
 
 # Environment Configuration
 environment  = "dev"
