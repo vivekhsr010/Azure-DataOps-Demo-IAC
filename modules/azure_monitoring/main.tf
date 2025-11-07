@@ -114,6 +114,133 @@ resource "azurerm_consumption_budget_subscription" "monthly_budget" {
 # ACTION GROUP FOR NOTIFICATIONS
 # =============================================================================
 
+# =============================================================================
+# LOGIC APP FOR MICROSOFT TEAMS INTEGRATION
+# =============================================================================
+
+# Logic App module for Teams notifications
+module "teams_logic_app" {
+  count  = var.teams_webhook_url != "" ? 1 : 0
+  source = "../azure_logic_apps"
+  
+  logic_app_name      = "${var.project_name}-teams-logic-app"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  
+  # HTTP Trigger Configuration
+  enable_http_trigger = true
+  trigger_name        = "AlertTrigger"
+  trigger_schema = jsonencode({
+    type = "object"
+    properties = {
+      schemaId = { type = "string" }
+      data = {
+        type = "object"
+        properties = {
+          alertContext = {
+            type = "object"
+            properties = {
+              name        = { type = "string" }
+              description = { type = "string" }
+              severity    = { type = "string" }
+              condition   = { type = "object" }
+              timestamp   = { type = "string" }
+            }
+          }
+          essentials = {
+            type = "object"
+            properties = {
+              alertRule          = { type = "string" }
+              severity           = { type = "string" }
+              signalType         = { type = "string" }
+              monitorCondition   = { type = "string" }
+              alertTargetIDs     = { type = "array" }
+              originAlertId      = { type = "string" }
+            }
+          }
+        }
+      }
+    }
+  })
+  
+  # HTTP Action Configuration
+  enable_http_action = true
+  action_name        = "SendTeamsMessage"
+  http_method        = "POST"
+  webhook_uri        = var.teams_webhook_url
+  
+  http_headers = {
+    "Content-Type" = "application/json"
+  }
+  
+  http_body = jsonencode({
+    "@type"    = "MessageCard"
+    "@context" = "http://schema.org/extensions"
+    themeColor = "@{if(equals(triggerBody()?['data']?['essentials']?['severity'], 'Sev0'), 'ff0000', if(equals(triggerBody()?['data']?['essentials']?['severity'], 'Sev1'), 'ff6600', if(equals(triggerBody()?['data']?['essentials']?['severity'], 'Sev2'), 'ffcc00', '00cc66')))}"
+    summary    = "Azure Alert: @{triggerBody()?['data']?['essentials']?['alertRule']}"
+    sections = [
+      {
+        activityTitle    = "🚨 Azure Monitor Alert"
+        activitySubtitle = "Project: ${var.project_name} | Channel: ${var.teams_channel_name}"
+        facts = [
+          {
+            name  = "Alert Rule"
+            value = "@{triggerBody()?['data']?['essentials']?['alertRule']}"
+          },
+          {
+            name  = "Severity"
+            value = "@{triggerBody()?['data']?['essentials']?['severity']}"
+          },
+          {
+            name  = "Status"
+            value = "@{triggerBody()?['data']?['essentials']?['monitorCondition']}"
+          },
+          {
+            name  = "Time"
+            value = "@{triggerBody()?['data']?['alertContext']?['timestamp']}"
+          },
+          {
+            name  = "Resource Group"
+            value = var.resource_group_name
+          },
+          {
+            name  = "Budget Limit"
+            value = "$${var.monthly_budget_limit}"
+          }
+        ]
+        markdown = true
+      },
+      {
+        text = "@{triggerBody()?['data']?['alertContext']?['description']}"
+      }
+    ]
+    potentialAction = [
+      {
+        "@type" = "OpenUri"
+        name    = "View in Azure Portal"
+        targets = [
+          {
+            os  = "default"
+            uri = "https://portal.azure.com/#blade/Microsoft_Azure_Monitoring/AzureMonitoringBrowseBlade/alertsV2"
+          }
+        ]
+      },
+      {
+        "@type" = "OpenUri"
+        name    = "View Cost Analysis"
+        targets = [
+          {
+            os  = "default"
+            uri = "https://portal.azure.com/#blade/Microsoft_Azure_CostManagement/Menu/costanalysis"
+          }
+        ]
+      }
+    ]
+  })
+  
+  tags = var.tags
+}
+
 # Main Action Group for all monitoring alerts
 resource "azurerm_monitor_action_group" "team_alerts" {
   name                = "${var.project_name}-team-alerts"
@@ -130,14 +257,28 @@ resource "azurerm_monitor_action_group" "team_alerts" {
     }
   }
 
-  # Optional: Add webhook for Slack/Teams integration
-  dynamic "webhook_receiver" {
-    for_each = var.webhook_url != "" ? [var.webhook_url] : []
+  # Logic App for Microsoft Teams (if configured)
+  dynamic "logic_app_receiver" {
+    for_each = var.teams_webhook_url != "" ? [1] : []
     content {
-      name        = "team-webhook"
-      service_uri = webhook_receiver.value
+      name                    = "teams-logic-app"
+      resource_id            = module.teams_logic_app[0].logic_app_id
+      callback_url           = module.teams_logic_app[0].callback_url
+      use_common_alert_schema = true
     }
   }
+
+  # Direct webhook for Teams (fallback if Logic App not used)
+  dynamic "webhook_receiver" {
+    for_each = var.teams_webhook_url != "" && var.use_logic_app_for_teams == false ? [var.teams_webhook_url] : []
+    content {
+      name                    = "teams-webhook-direct"
+      service_uri            = webhook_receiver.value
+      use_common_alert_schema = true
+    }
+  }
+
+
 
   tags = var.tags
 }

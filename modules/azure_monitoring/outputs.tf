@@ -39,14 +39,28 @@ output "monthly_budget_id" {
   value       = azurerm_consumption_budget_subscription.monthly_budget.id
 }
 
+output "teams_logic_app_id" {
+  description = "ID of the Teams Logic App workflow"
+  value       = var.teams_webhook_url != "" ? module.teams_logic_app[0].logic_app_id : null
+}
+
+output "teams_logic_app_callback_url" {
+  description = "Callback URL for the Teams Logic App trigger"
+  value       = var.teams_webhook_url != "" ? module.teams_logic_app[0].callback_url : null
+  sensitive   = true
+}
+
 output "monitoring_summary" {
   description = "Summary of monitoring configuration"
   value = {
-    project_name        = var.project_name
-    monthly_budget      = var.monthly_budget_limit
-    team_members        = length(var.team_email_addresses)
-    cost_alerts_enabled = var.enable_cost_alerts
+    project_name            = var.project_name
+    monthly_budget          = var.monthly_budget_limit
+    team_members            = length(var.team_email_addresses)
+    cost_alerts_enabled     = var.enable_cost_alerts
     resource_alerts_enabled = var.enable_resource_alerts
-    workspace_name      = azurerm_log_analytics_workspace.cost_monitoring.name
+    workspace_name          = azurerm_log_analytics_workspace.cost_monitoring.name
+    teams_integration       = var.teams_webhook_url != ""
+    teams_via_logic_app     = var.teams_webhook_url != "" && var.use_logic_app_for_teams
+    teams_channel           = var.teams_channel_name
   }
 }

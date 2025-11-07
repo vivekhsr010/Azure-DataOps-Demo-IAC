@@ -176,15 +176,27 @@ variable "monthly_budget_limit" {
   }
 }
 
-variable "webhook_url" {
-  description = "Optional webhook URL for Slack/Teams integration"
+variable "teams_webhook_url" {
+  description = "Microsoft Teams webhook URL for notifications"
   type        = string
   default     = ""
 
   validation {
-    condition     = var.webhook_url == "" || can(regex("^https://", var.webhook_url))
-    error_message = "Webhook URL must be empty or start with https://."
+    condition     = var.teams_webhook_url == "" || can(regex("^https://[a-zA-Z0-9.-]+\\.webhook\\.office\\.com/", var.teams_webhook_url))
+    error_message = "Teams webhook URL must be empty or a valid Microsoft Teams webhook URL (https://*.webhook.office.com/)."
   }
+}
+
+variable "teams_channel_name" {
+  description = "Microsoft Teams channel name for notifications (optional, used in alert messages)"
+  type        = string
+  default     = "Azure Alerts"
+}
+
+variable "use_logic_app_for_teams" {
+  description = "Whether to use Logic App for Teams integration (recommended) or direct webhook"
+  type        = bool
+  default     = true
 }
 
 variable "no_public_ip" {

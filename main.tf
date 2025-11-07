@@ -91,6 +91,8 @@ module "cost_monitoring" {
   resource_group_name = module.resource_group.resource_group_name
   team_email_addresses = var.team_email_addresses
   monthly_budget_limit = var.monthly_budget_limit
-  webhook_url         = var.webhook_url
+  teams_webhook_url   = var.teams_webhook_url
+  teams_channel_name  = var.teams_channel_name
+  use_logic_app_for_teams = var.use_logic_app_for_teams
   tags                = local.common_tags
 }
