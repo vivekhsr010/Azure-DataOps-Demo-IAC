@@ -54,8 +54,31 @@ module "databricks_cluster" {
   custom_tags             = local.common_tags
 
   providers = {
-    databricks = databricks.workspace
+    databricks = databricks
   }
+}
+
+# Azure Data Factory - Minimal Setup
+module "data_factory" {
+  count               = var.enable_data_factory ? 1 : 0
+  depends_on          = [module.resource_group, module.datalake_storage, module.azure_keyvault, module.databricks_workspace]
+  source              = "./modules/azure_data_factory"
+  data_factory_name   = local.resource_names.data_factory
+  location            = var.location
+  resource_group_name = module.resource_group.resource_group_name
+  
+  # Essential Linked Services
+  datalake_url                = module.datalake_storage.primary_dfs_endpoint
+  key_vault_id                = module.azure_keyvault.keyvault_id
+  databricks_workspace_url    = module.databricks_workspace.workspace_url
+  databricks_workspace_id     = module.databricks_workspace.workspace_id
+  databricks_cluster_id       = var.deploy_databricks_cluster ? module.databricks_cluster[0].cluster_id : null
+  
+  # Optional Monitoring
+  enable_diagnostic_settings  = var.adf_enable_diagnostic_settings
+  log_analytics_workspace_id  = var.enable_cost_monitoring ? module.cost_monitoring[0].log_analytics_workspace_id : null
+  
+  tags = local.common_tags
 }
 
 # Cost & Resource Monitoring

@@ -45,6 +45,10 @@ project_name = "analytics"
 deploy_databricks_cluster = true   # Set to true for Phase 2 deployment
 single_node_cluster      = true   # Single node cluster (UI checkbox equivalent)
 
+# Azure Data Factory Configuration - Minimal Setup
+enable_data_factory            = true   # Deploy ADF with ADLS + Key Vault + Databricks linked services
+adf_enable_diagnostic_settings = true   # Monitor ADF activities
+
 tags = {
   environment = "dev"
   project     = "terraform-azure"
