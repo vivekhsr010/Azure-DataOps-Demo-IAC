@@ -2,7 +2,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 4.8.0"
+      version = "~> 4.0"
     }
     azuread = {
       source  = "hashicorp/azuread"
@@ -14,10 +14,10 @@ terraform {
     }
     databricks = {
       source  = "databricks/databricks"
-      version = "~> 1.91.0"
+      version = "~> 1.90"
     }
   }
-  required_version = ">= 1.9.0"
+  required_version = ">= 1.4.0"
 }
 
 provider "azurerm" {
@@ -26,7 +26,6 @@ provider "azurerm" {
 }
 
 provider "databricks" {
-  alias = "workspace"
-  # This provider will be configured dynamically when workspace is available
-  host = var.deploy_databricks_cluster ? module.databricks_workspace.workspace_url : null
+  # Provider will be configured via environment variables or Azure CLI authentication
+  # DATABRICKS_HOST will be set when needed for cluster operations
 }

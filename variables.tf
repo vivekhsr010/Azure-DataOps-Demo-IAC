@@ -199,6 +199,22 @@ variable "deploy_databricks_cluster" {
   default     = false
 }
 
+# ===================================
+# Azure Data Factory Configuration
+# ===================================
+
+variable "enable_data_factory" {
+  description = "Whether to deploy Azure Data Factory with essential linked services (ADLS, Key Vault, Databricks)"
+  type        = bool
+  default     = false
+}
+
+variable "adf_enable_diagnostic_settings" {
+  description = "Whether to enable diagnostic settings for Data Factory monitoring"
+  type        = bool
+  default     = true
+}
+
 variable "single_node_cluster" {
   description = "Whether to create a single node cluster (equivalent to UI checkbox). When true, sets num_workers to 0 and configures single node spark settings"
   type        = bool

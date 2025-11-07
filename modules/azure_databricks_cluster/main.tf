@@ -1,8 +1,8 @@
 terraform {
   required_providers {
     databricks = {
-      source  = "databricks/databricks"
-      version = ">= 1.0"
+      source = "databricks/databricks"
+      # Version managed centrally in root provider.tf
     }
   }
 }

@@ -17,6 +17,7 @@ locals {
     storage_account   = replace("st${local.naming_prefix}${random_integer.storage_suffix.result}", "-", "")
     keyvault          = "kv-${local.naming_prefix}-${random_integer.kv_suffix.result}"
     databricks        = "dbw-${local.naming_prefix}"
+    data_factory      = "adf-${local.naming_prefix}"
     service_principal = "sp-${local.naming_prefix}-datalake"
     log_analytics     = "log-${local.naming_prefix}"
   }
